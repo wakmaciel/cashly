@@ -11,6 +11,7 @@ App web (PWA) para organizar contas, cartões de crédito, transações e orçam
 - **Transações**: histórico agrupado por dia, com receitas, despesas, transferências entre contas e pagamentos de fatura; balanço mensal.
 - **Planejamento**: orçamentos por categoria com barra de progresso.
 - **Mais**: gerenciar categorias, exportar/importar backup em JSON, apagar todos os dados.
+- **Aparência**: tema claro/escuro automático, seguindo o sistema (em Mais > Aparência também dá pra forçar sempre Claro ou sempre Escuro).
 - Navegação por mês (setas no topo).
 - Botão de "olho" para ocultar valores na tela.
 

@@ -880,7 +880,8 @@ $all(".tab-btn").forEach(b=>{
 $all(".menu-row").forEach(row=>{
   row.addEventListener("click", ()=>{
     const action = row.dataset.action;
-    if(action==="accounts"){ showPage("home"); document.getElementById("accountsList").scrollIntoView({behavior:"smooth"}); }
+    if(action==="theme"){ openThemeSheet(); }
+    else if(action==="accounts"){ showPage("home"); document.getElementById("accountsList").scrollIntoView({behavior:"smooth"}); }
     else if(action==="cards"){ showPage("home"); document.getElementById("cardsList").scrollIntoView({behavior:"smooth"}); }
     else if(action==="categories"){ renderCategoriesManageList(); openSheet("#sheetCategories"); }
     else if(action==="export") exportData();
@@ -933,6 +934,53 @@ $("#toggleVisibility").addEventListener("click", ()=>{
   refreshAll();
 });
 
+/* ============== tema (claro / escuro / automático) ============== */
+const THEME_KEY = "cashly:theme";
+const THEME_LABELS = { auto:"Automático", light:"Claro", dark:"Escuro" };
+const systemDarkQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+function getThemePref(){
+  return localStorage.getItem(THEME_KEY) || "auto";
+}
+function applyTheme(pref){
+  const root = document.documentElement;
+  if(pref === "light") root.setAttribute("data-theme","light");
+  else if(pref === "dark") root.setAttribute("data-theme","dark");
+  else root.removeAttribute("data-theme"); // auto: deixa o CSS seguir prefers-color-scheme
+
+  // resolve a cor real aplicada agora, para sincronizar a barra de status do iOS
+  const isLight = pref === "light" || (pref === "auto" && systemDarkQuery && !systemDarkQuery.matches);
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if(metaTheme) metaTheme.setAttribute("content", isLight ? "#F3F4F9" : "#0E1015");
+
+  const label = $("#themeValueLabel");
+  if(label) label.textContent = THEME_LABELS[pref] || "Automático";
+
+  $all(".theme-pick-row").forEach(row=>{
+    row.classList.toggle("active", row.dataset.themeChoice === pref);
+  });
+}
+function setThemePref(pref){
+  localStorage.setItem(THEME_KEY, pref);
+  applyTheme(pref);
+}
+function openThemeSheet(){
+  applyTheme(getThemePref());
+  openSheet("#sheetTheme");
+}
+$all(".theme-pick-row").forEach(row=>{
+  row.addEventListener("click", ()=>{
+    setThemePref(row.dataset.themeChoice);
+    closeSheet("#sheetTheme");
+    toast("Aparência: " + THEME_LABELS[row.dataset.themeChoice]);
+  });
+});
+if(systemDarkQuery){
+  systemDarkQuery.addEventListener("change", ()=>{
+    if(getThemePref() === "auto") applyTheme("auto");
+  });
+}
+
 /* ============== settings shortcut (top gear) ============== */
 $("#openSettings").addEventListener("click", ()=> showPage("more"));
 
@@ -940,6 +988,7 @@ $("#openSettings").addEventListener("click", ()=> showPage("more"));
 function init(){
   $("#txDate").value = isoDate(new Date());
   $("#toggleVisibility").textContent = hideValues ? "🙈" : "👁";
+  applyTheme(getThemePref());
   refreshAll();
 
   if("serviceWorker" in navigator){

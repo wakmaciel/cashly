@@ -143,6 +143,7 @@
     </div>
 
     <div id="moreGerenciar" class="menu-card" style="margin-top:4px;">
+      <div class="menu-row" data-action="theme"><div class="mi">🌓</div><div class="mt">Aparência</div><div class="mt-value" id="themeValueLabel">Automático</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="accounts"><div class="mi">🏦</div><div class="mt">Contas</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="cards"><div class="mi">💳</div><div class="mt">Cartões de crédito</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="categories"><div class="mi">🏷️</div><div class="mt">Categorias</div><div class="chev">›</div></div>
@@ -345,6 +346,33 @@
         <div class="field"><label>Data do pagamento</label><input type="date" id="invoicePayDate"></div>
         <button class="btn-primary" id="confirmInvoicePayBtn">Confirmar pagamento</button>
         <p style="font-size:11.5px; color:var(--text-dim); text-align:center; margin:0;">Pagar um valor menor que o total deixa a fatura marcada como "paga parcialmente" e o restante continua pendente.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: APARÊNCIA ============ -->
+  <div class="overlay" id="sheetTheme">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3>Aparência</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div class="theme-pick-list">
+          <div class="theme-pick-row" data-theme-choice="auto">
+            <div class="tp-icon">🌓</div>
+            <div class="tp-body"><div class="tp-name">Automático</div><div class="tp-sub">Segue o tema do sistema (iOS)</div></div>
+            <div class="tp-check">✓</div>
+          </div>
+          <div class="theme-pick-row" data-theme-choice="light">
+            <div class="tp-icon">☀️</div>
+            <div class="tp-body"><div class="tp-name">Claro</div><div class="tp-sub">Sempre usar tema claro</div></div>
+            <div class="tp-check">✓</div>
+          </div>
+          <div class="theme-pick-row" data-theme-choice="dark">
+            <div class="tp-icon">🌙</div>
+            <div class="tp-body"><div class="tp-name">Escuro</div><div class="tp-sub">Sempre usar tema escuro</div></div>
+            <div class="tp-check">✓</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
