@@ -1,4 +1,6 @@
-const CACHE = "cashly-v1";
+// ⚠️ BUILD_VERSION é substituído automaticamente pelo GitHub Actions a cada deploy.
+// Se você não usar Actions, troque manualmente esse valor a cada vez que publicar.
+const CACHE = "cashly-__BUILD_VERSION__";
 const ASSETS = [
   "./",
   "./index.html",

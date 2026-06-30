@@ -944,6 +944,15 @@ function init(){
 
   if("serviceWorker" in navigator){
     navigator.serviceWorker.register("sw.js").catch(()=>{});
+
+    // Quando o SW novo assume o controle (após deploy), recarrega a página
+    // automaticamente para garantir que o usuário veja a versão atualizada.
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", ()=>{
+      if(refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
   }
 }
 init();
