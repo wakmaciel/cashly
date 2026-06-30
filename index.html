@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Cashly — Finanças pessoais</title>
+<meta name="description" content="Organize contas, cartões e gastos em um só lugar.">
+<meta name="theme-color" content="#0E1015">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cashly">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ TOPBAR ============ -->
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span>Cashly</div>
+    <div class="month-switch">
+      <button id="prevMonth" aria-label="Mês anterior">‹</button>
+      <span id="monthLabel">Junho</span>
+      <button id="nextMonth" aria-label="Próximo mês">›</button>
+    </div>
+    <button class="icon-btn" id="openSettings" aria-label="Ajustes">⚙</button>
+  </div>
+
+  <!-- ============ PAGE: PRINCIPAL ============ -->
+  <main class="page" id="page-home">
+
+    <section class="balance-card">
+      <div class="ring-wrap">
+        <svg viewBox="0 0 208 208">
+          <circle class="ring-track" cx="104" cy="104" r="92"></circle>
+          <circle class="ring-progress" id="ringProgress" cx="104" cy="104" r="92"
+            stroke="url(#ringGrad)" stroke-dasharray="0 578"></circle>
+          <defs>
+            <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#7C6CFF"/>
+              <stop offset="100%" stop-color="#2DD4BF"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div class="ring-center">
+          <span class="label">Saldo em contas</span>
+          <span class="value num" id="totalBalance">R$ 0,00</span>
+          <button class="eye" id="toggleVisibility" aria-label="Ocultar saldo">👁</button>
+        </div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-pill income">
+          <div class="ic">↑</div>
+          <div class="meta"><span class="t">Receitas</span><span class="v num" id="monthIncome">R$ 0,00</span></div>
+        </div>
+        <div class="flow-pill expense">
+          <div class="ic">↓</div>
+          <div class="meta"><span class="t">Despesas</span><span class="v num" id="monthExpense">R$ 0,00</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Contas</h2>
+        <div class="actions">
+          <button class="chip-btn" id="addAccountBtn" aria-label="Nova conta">+</button>
+        </div>
+      </div>
+      <div class="list-card" id="accountsList" style="margin-top:12px;"></div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Cartões de crédito</h2>
+        <div class="actions">
+          <button class="chip-btn" id="addCardBtn" aria-label="Novo cartão">+</button>
+        </div>
+      </div>
+      <div class="list-card" id="cardsList" style="margin-top:12px;"></div>
+    </section>
+
+    <section>
+      <div class="section-head"><h2>Despesas por categoria</h2></div>
+      <div class="donut-card" style="margin-top:12px;" id="donutCard"></div>
+    </section>
+  </main>
+
+  <!-- ============ PAGE: TRANSAÇÕES ============ -->
+  <main class="page page-hidden" id="page-tx">
+    <section class="balance-mini">
+      <div class="balance-bars">
+        <div class="bar" id="barIncome" style="background:var(--green); height:10%;"></div>
+        <div class="bar" id="barExpense" style="background:var(--coral); height:10%;"></div>
+      </div>
+      <div class="rows">
+        <div class="r"><span class="l">Receitas</span><b class="num" id="txIncome" style="color:var(--green)">R$ 0,00</b></div>
+        <div class="r"><span class="l">Despesas</span><b class="num" id="txExpense" style="color:var(--coral)">R$ 0,00</b></div>
+        <div class="r"><span class="l">Balanço</span><b class="num" id="txBalance">R$ 0,00</b></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><h2>Histórico</h2></div>
+      <div id="txListWrap" style="display:flex; flex-direction:column; gap:18px; margin-top:12px;"></div>
+    </section>
+  </main>
+
+  <!-- ============ PAGE: PLANEJAMENTO ============ -->
+  <main class="page page-hidden" id="page-plan">
+    <section>
+      <div class="section-head">
+        <h2>Orçamento do mês</h2>
+        <button class="chip-btn" id="addBudgetBtn" aria-label="Novo orçamento">+</button>
+      </div>
+      <p style="font-size:12.5px; color:var(--text-dim); margin:8px 0 14px;">Defina um limite de gastos por categoria e acompanhe em tempo real.</p>
+      <div id="budgetList" style="display:flex; flex-direction:column; gap:12px;"></div>
+    </section>
+  </main>
+
+  <!-- ============ PAGE: MAIS ============ -->
+  <main class="page page-hidden" id="page-more">
+    <div class="more-tabs">
+      <button class="tab-btn active" data-tab="gerenciar">Gerenciar</button>
+      <button class="tab-btn" data-tab="sobre">Sobre</button>
+    </div>
+
+    <div id="moreGerenciar" class="menu-card" style="margin-top:4px;">
+      <div class="menu-row" data-action="accounts"><div class="mi">🏦</div><div class="mt">Contas</div><div class="chev">›</div></div>
+      <div class="menu-row" data-action="cards"><div class="mi">💳</div><div class="mt">Cartões de crédito</div><div class="chev">›</div></div>
+      <div class="menu-row" data-action="categories"><div class="mi">🏷️</div><div class="mt">Categorias</div><div class="chev">›</div></div>
+      <div class="menu-row" data-action="export"><div class="mi">⬇️</div><div class="mt">Exportar backup (JSON)</div><div class="chev">›</div></div>
+      <div class="menu-row" data-action="import"><div class="mi">⬆️</div><div class="mt">Importar backup</div><div class="chev">›</div></div>
+      <div class="menu-row" data-action="reset"><div class="mi">🗑️</div><div class="mt" style="color:var(--coral)">Apagar todos os dados</div><div class="chev">›</div></div>
+    </div>
+
+    <div id="moreSobre" class="menu-card page-hidden" style="margin-top:4px; padding:22px; display:flex; flex-direction:column; gap:10px; align-items:center; text-align:center;">
+      <img src="icons/icon-192.png" width="64" height="64" style="border-radius:18px;" alt="Cashly">
+      <h3 style="font-family:var(--font-display); font-size:17px;">Cashly</h3>
+      <p style="font-size:12.5px; color:var(--text-dim); line-height:1.6;">Versão 1.0 — Suas finanças, simplificadas.<br>Todos os dados ficam salvos somente neste dispositivo (localStorage), nada é enviado a servidores.</p>
+    </div>
+  </main>
+
+  <!-- ============ BOTTOM NAV ============ -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-page="home">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+      Principal
+    </button>
+    <button class="nav-btn" data-page="tx">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg>
+      Transações
+    </button>
+    <button class="nav-fab" id="fabAdd" aria-label="Adicionar">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0E1015" stroke-width="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+    <button class="nav-btn" data-page="plan">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg>
+      Planejamento
+    </button>
+    <button class="nav-btn" data-page="more">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>
+      Mais
+    </button>
+  </nav>
+
+  <!-- ============ SHEET: NOVA TRANSAÇÃO ============ -->
+  <div class="overlay" id="sheetTx">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3 id="txSheetTitle">Nova transação</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div class="seg" id="txTypeSeg">
+          <button class="active expense" data-type="expense">Despesa</button>
+          <button data-type="income">Receita</button>
+          <button data-type="transfer">Transferência</button>
+        </div>
+
+        <div class="amount-input"><span>R$</span><input type="text" inputmode="decimal" id="txAmount" placeholder="0,00"></div>
+
+        <div class="field"><label>Descrição</label><input type="text" id="txDesc" placeholder="Ex: Supermercado, Salário..."></div>
+
+        <div class="field" id="txCategoryField">
+          <label>Categoria</label>
+          <button class="field-select-btn" id="txCategoryBtn" style="display:flex; align-items:center; gap:10px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-sm); padding:12px 14px; color:var(--text); cursor:pointer; font-size:14.5px;">
+            <span id="txCategoryIcon">🏷️</span><span id="txCategoryName">Selecionar categoria</span>
+          </button>
+        </div>
+
+        <div class="field" id="txAccountField">
+          <label id="txAccountLabel">Conta / Cartão</label>
+          <select id="txAccount"></select>
+        </div>
+
+        <div class="field page-hidden" id="txToAccountField">
+          <label>Para a conta</label>
+          <select id="txToAccount"></select>
+        </div>
+
+        <div class="field"><label>Data</label><input type="date" id="txDate"></div>
+
+        <button class="btn-primary" id="saveTxBtn">Salvar transação</button>
+        <button class="btn-danger page-hidden" id="deleteTxBtn">Excluir transação</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: ESCOLHER CATEGORIA ============ -->
+  <div class="overlay" id="sheetCategoryPick">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3>Categoria</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body"><div class="cat-pick-list" id="catPickList"></div></div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: NOVA CONTA ============ -->
+  <div class="overlay" id="sheetAccount">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3 id="accSheetTitle">Nova conta</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div class="field"><label>Nome da conta</label><input type="text" id="accName" placeholder="Ex: Conta Itaú, Carteira..."></div>
+        <div class="field"><label>Saldo inicial</label>
+          <div class="amount-input"><span>R$</span><input type="text" inputmode="decimal" id="accBalance" placeholder="0,00"></div>
+        </div>
+        <div class="field"><label>Ícone</label><div class="icon-grid" id="accIconGrid"></div></div>
+        <button class="btn-primary" id="saveAccountBtn">Salvar conta</button>
+        <button class="btn-danger page-hidden" id="deleteAccountBtn">Excluir conta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: NOVO CARTÃO ============ -->
+  <div class="overlay" id="sheetCard">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3 id="cardSheetTitle">Novo cartão</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div class="field"><label>Nome do cartão</label><input type="text" id="cardName" placeholder="Ex: Nubank, Inter..."></div>
+        <div class="field"><label>Limite total</label>
+          <div class="amount-input"><span>R$</span><input type="text" inputmode="decimal" id="cardLimit" placeholder="0,00"></div>
+        </div>
+        <div class="field"><label>Dia de fechamento</label><input type="number" min="1" max="31" id="cardClosing" placeholder="Ex: 15"></div>
+        <div class="field"><label>Dia de vencimento</label><input type="number" min="1" max="31" id="cardDue" placeholder="Ex: 22"></div>
+        <button class="btn-primary" id="saveCardBtn">Salvar cartão</button>
+        <button class="btn-danger page-hidden" id="deleteCardBtn">Excluir cartão</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: NOVO ORÇAMENTO ============ -->
+  <div class="overlay" id="sheetBudget">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3>Novo orçamento</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div class="field">
+          <label>Categoria</label>
+          <button id="budgetCategoryBtn" style="display:flex; align-items:center; gap:10px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-sm); padding:12px 14px; color:var(--text); cursor:pointer; font-size:14.5px;">
+            <span id="budgetCategoryIcon">🏷️</span><span id="budgetCategoryName">Selecionar categoria</span>
+          </button>
+        </div>
+        <div class="field"><label>Limite mensal</label>
+          <div class="amount-input"><span>R$</span><input type="text" inputmode="decimal" id="budgetLimit" placeholder="0,00"></div>
+        </div>
+        <button class="btn-primary" id="saveBudgetBtn">Salvar orçamento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: CATEGORIAS (gerenciar) ============ -->
+  <div class="overlay" id="sheetCategories">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3>Categorias</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div class="cat-pick-list" id="categoriesManageList"></div>
+        <button class="btn-secondary" id="newCategoryBtn">+ Nova categoria</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: EDITAR CATEGORIA ============ -->
+  <div class="overlay" id="sheetCategoryEdit">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3 id="catEditTitle">Nova categoria</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div class="field"><label>Nome</label><input type="text" id="catName" placeholder="Ex: Lazer"></div>
+        <div class="field"><label>Ícone</label><div class="icon-grid" id="catIconGrid"></div></div>
+        <div class="field"><label>Cor</label><div class="color-grid" id="catColorGrid"></div></div>
+        <button class="btn-primary" id="saveCategoryBtn">Salvar categoria</button>
+        <button class="btn-danger page-hidden" id="deleteCategoryBtn">Excluir categoria</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
