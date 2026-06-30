@@ -6,8 +6,9 @@ App web (PWA) para organizar contas, cartões de crédito, transações e orçam
 
 ## Funcionalidades
 
-- **Principal**: saldo total em contas (anel visual receitas x despesas), lista de contas, lista de cartões com fatura do mês, despesas por categoria.
-- **Transações**: histórico agrupado por dia, com receitas, despesas e transferências entre contas; balanço mensal.
+- **Principal**: saldo total em contas (anel visual receitas x despesas), lista de contas, lista de cartões com fatura do mês, aviso de **fatura(s) fechada(s)** aguardando pagamento, despesas por categoria.
+- **Pagamento de fatura**: toque no aviso "Fatura fechada" na tela Principal (ou no cartão, na seção Cartões), escolha qual cartão/fatura quer pagar, selecione a conta de origem e o valor — pode ser o total ou um valor parcial. Cada cartão mostra o status da fatura do mês (**Fatura fechada**, **Paga parcialmente** ou **Fatura paga**) e o pagamento fica registrado no histórico de transações, sem contar a despesa em dobro (a compra já entra como despesa no momento da compra; o pagamento da fatura só reduz o saldo da conta usada).
+- **Transações**: histórico agrupado por dia, com receitas, despesas, transferências entre contas e pagamentos de fatura; balanço mensal.
 - **Planejamento**: orçamentos por categoria com barra de progresso.
 - **Mais**: gerenciar categorias, exportar/importar backup em JSON, apagar todos os dados.
 - Navegação por mês (setas no topo).

@@ -26,6 +26,7 @@ const DEFAULT_CATEGORIES = [
   { id:"cat_freelance",   name:"Freelance",   icon:"📈", color:"#2DD4BF", type:"income" },
   { id:"cat_presente",    name:"Presente",    icon:"🎁", color:"#FF8FB1", type:"income" },
   { id:"cat_outrosrec",   name:"Outras receitas", icon:"💰", color:"#7C6CFF", type:"income" },
+  { id:"cat_fatura",      name:"Pagamento de fatura", icon:"💳", color:"#7C6CFF", type:"expense", system:true },
 ];
 
 const MONTHS = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -35,7 +36,15 @@ function uid(){ return "id_" + Date.now().toString(36) + Math.random().toString(
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw) return JSON.parse(raw);
+    if(raw){
+      const data = JSON.parse(raw);
+      if(!data.categories) data.categories = DEFAULT_CATEGORIES.slice();
+      if(!data.categories.find(c=>c.id==="cat_fatura")){
+        data.categories.push({ id:"cat_fatura", name:"Pagamento de fatura", icon:"💳", color:"#7C6CFF", type:"expense", system:true });
+      }
+      if(!data.budgets) data.budgets = [];
+      return data;
+    }
   }catch(e){ console.warn("Falha ao carregar dados", e); }
   return {
     accounts: [
@@ -107,6 +116,7 @@ function accountBalance(acc){
     if(tx.accountId === acc.id && tx.kind === "account"){
       if(tx.type === "income") bal += tx.amount;
       else if(tx.type === "expense") bal -= tx.amount;
+      else if(tx.type === "invoice_payment") bal -= tx.amount;
       else if(tx.type === "transfer_out") bal -= tx.amount;
       else if(tx.type === "transfer_in") bal += tx.amount;
     }
@@ -122,13 +132,61 @@ function cardInvoice(card, mKey){
     .reduce((s,tx)=> s + tx.amount, 0);
 }
 function monthTx(mKey){
-  return state.transactions.filter(tx => txMonthKey(tx) === mKey && tx.type !== "transfer_out" && tx.type !== "transfer_in");
+  return state.transactions.filter(tx => txMonthKey(tx) === mKey && tx.type !== "transfer_out" && tx.type !== "transfer_in" && tx.type !== "invoice_payment");
 }
 function monthIncomeExpense(mKey){
   const txs = monthTx(mKey);
   const income = txs.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);
   const expense = txs.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
   return { income, expense };
+}
+
+/* ----- faturas: status, pagamento e total fechado ----- */
+function isInvoiceClosed(card, mKey){
+  const nowKey = monthKey(new Date());
+  if(mKey < nowKey) return true;
+  if(mKey > nowKey) return false;
+  const closingDay = card.closingDay || 31;
+  return new Date().getDate() > closingDay;
+}
+function invoicePaidAmount(card, mKey){
+  return state.transactions
+    .filter(t => t.type==="invoice_payment" && t.invoicePayment && t.invoicePayment.cardId===card.id && t.invoicePayment.mKey===mKey)
+    .reduce((s,t)=> s+t.amount, 0);
+}
+function invoiceRemaining(card, mKey){
+  return cardInvoice(card, mKey) - invoicePaidAmount(card, mKey);
+}
+function invoiceStatus(card, mKey){
+  const total = cardInvoice(card, mKey);
+  if(total <= 0.004) return { label:null };
+  const paid = invoicePaidAmount(card, mKey);
+  if(paid >= total - 0.004) return { label:"Fatura paga", cls:"ok" };
+  if(paid > 0) return { label:"Paga parcialmente", cls:"pending" };
+  if(isInvoiceClosed(card, mKey)) return { label:"Fatura fechada", cls:"pending" };
+  return { label:null };
+}
+function monthLabel(mKey){
+  const [y,m] = mKey.split("-").map(Number);
+  return MONTHS[m-1] + "/" + y;
+}
+function closedInvoicesDue(){
+  let sum = 0;
+  const list = [];
+  state.cards.forEach(card=>{
+    const keys = new Set(state.transactions.filter(t=>t.kind==="card" && t.cardId===card.id).map(txMonthKey));
+    keys.forEach(mKey=>{
+      if(isInvoiceClosed(card, mKey)){
+        const remaining = invoiceRemaining(card, mKey);
+        if(remaining > 0.004){
+          sum += remaining;
+          list.push({ card, mKey, remaining, paid: invoicePaidAmount(card,mKey), total: cardInvoice(card,mKey) });
+        }
+      }
+    });
+  });
+  list.sort((a,b)=> a.mKey.localeCompare(b.mKey));
+  return { sum, list };
 }
 
 /* ============== rendering: header ============== */
@@ -157,6 +215,7 @@ function renderHome(){
   $("#monthIncome").textContent = maskMoney(income);
   $("#monthExpense").textContent = maskMoney(expense);
   renderRing(income, expense);
+  renderInvoiceBanner();
 
   // accounts
   const accWrap = $("#accountsList");
@@ -188,6 +247,7 @@ function renderHome(){
     let totalInvoice = 0;
     state.cards.forEach(card=>{
       const invoice = cardInvoice(card, mKey);
+      const status = invoiceStatus(card, mKey);
       totalInvoice += invoice;
       cardWrap.appendChild(el("div",{class:"list-row", onclick:()=>openCardSheet(card)},[
         el("div",{class:"row-ic", style:`background:${card.color||"#262B38"}`},["💳"]),
@@ -195,7 +255,10 @@ function renderHome(){
           el("div",{class:"name"},[card.name]),
           el("div",{class:"sub"},[card.closingDay ? `Fecha dia ${card.closingDay}` : "Sem data de fechamento"])
         ]),
-        el("div",{class:"row-val neg"},[maskMoney(invoice)])
+        el("div",{class:"row-val-stack"},[
+          status.label ? el("div",{class:`row-status ${status.cls}`},[status.label]) : null,
+          el("div",{class:`amt-line num ${status.cls==="ok"?"pos":"neg"}`},[maskMoney(invoice)])
+        ])
       ]));
     });
     cardWrap.appendChild(el("div",{class:"total-row"},[
@@ -204,6 +267,15 @@ function renderHome(){
   }
 
   renderDonut(mKey);
+}
+
+function renderInvoiceBanner(){
+  const { sum, list } = closedInvoicesDue();
+  const wrap = $("#invoiceBanner");
+  if(sum <= 0.004){ wrap.classList.add("page-hidden"); return; }
+  wrap.classList.remove("page-hidden");
+  $("#invoiceBannerAmount").textContent = maskMoney(sum);
+  $("#invoiceBannerSub").textContent = `${list.length} fatura${list.length>1?"s":""} fechada${list.length>1?"s":""} aguardando pagamento`;
 }
 
 function emptyRow(msg){ return el("div",{class:"empty-row"},[msg]); }
@@ -302,7 +374,7 @@ function renderTx(){
       const cat = getCategory(tx.categoryId) || {icon:"🔁", color:"#6C7A93", name:"Transferência"};
       const place = tx.kind === "card" ? (getCard(tx.cardId)||{}).name : (getAccount(tx.accountId)||{}).name;
       const isPos = tx.type === "income";
-      group.appendChild(el("div",{class:"tx-row", onclick:()=>openTxSheet(tx)},[
+      group.appendChild(el("div",{class:"tx-row", onclick:()=> tx.type==="invoice_payment" ? openInvoicePaymentView(tx) : openTxSheet(tx)},[
         el("div",{class:"tx-ic", style:`background:${cat.color}33; color:${cat.color}`},[cat.icon]),
         el("div",{class:"tx-body"},[
           el("div",{class:"name"},[tx.description || cat.name]),
@@ -364,7 +436,7 @@ function renderPlan(){
 function renderCategoriesManageList(){
   const wrap = $("#categoriesManageList");
   wrap.innerHTML = "";
-  state.categories.forEach(cat=>{
+  state.categories.filter(c=>!c.system).forEach(cat=>{
     wrap.appendChild(el("div",{class:"cat-pick-row", onclick:()=>openCategoryEdit(cat)},[
       el("div",{class:"row-ic", style:`background:${cat.color}`},[cat.icon]),
       el("span",{},[cat.name])
@@ -429,7 +501,7 @@ function setTxType(type){
   fillAccountSelect($("#txAccount"), type==="expense");
   fillAccountSelect($("#txToAccount"), false);
   if(type !== "transfer"){
-    txSelectedCategory = state.categories.find(c=>c.type===type) || null;
+    txSelectedCategory = state.categories.find(c=>c.type===type && !c.system) || null;
     updateCategoryBtn();
   }
 }
@@ -448,7 +520,7 @@ function updateCategoryBtn(){
 function openCategoryPicker(type, onPick){
   const wrap = $("#catPickList");
   wrap.innerHTML = "";
-  state.categories.filter(c=>c.type===type).forEach(cat=>{
+  state.categories.filter(c=>c.type===type && !c.system).forEach(cat=>{
     wrap.appendChild(el("div",{class:"cat-pick-row", onclick:()=>{ onPick(cat); closeSheet("#sheetCategoryPick"); }},[
       el("div",{class:"row-ic", style:`background:${cat.color}`},[cat.icon]),
       el("span",{},[cat.name])
@@ -595,6 +667,24 @@ function openCardSheet(card){
   $("#cardLimit").value = card ? String(card.limit||0).replace(".",",") : "";
   $("#cardClosing").value = card ? (card.closingDay||"") : "";
   $("#cardDue").value = card ? (card.dueDay||"") : "";
+
+  const alertBox = $("#cardInvoiceAlert");
+  if(card){
+    const mKey = monthKey(viewDate);
+    const status = invoiceStatus(card, mKey);
+    const remaining = invoiceRemaining(card, mKey);
+    if(status.label && status.label !== "Fatura paga" && remaining > 0.004){
+      alertBox.classList.remove("page-hidden");
+      $("#cardInvoiceAlertLabel").textContent = `${status.label} · ${monthLabel(mKey)}`;
+      $("#cardInvoiceAlertAmount").textContent = maskMoney(remaining);
+      $("#cardInvoiceAlertBtn").onclick = ()=>{ closeSheet("#sheetCard"); openInvoiceConfirm(card, mKey); };
+    } else {
+      alertBox.classList.add("page-hidden");
+    }
+  } else {
+    alertBox.classList.add("page-hidden");
+  }
+
   $("#saveCardBtn").onclick = ()=>{
     const name = $("#cardName").value.trim();
     if(!name){ toast("Informe um nome"); return; }
@@ -621,6 +711,92 @@ $("#deleteCardBtn").addEventListener("click", ()=>{
   persist(); closeSheet("#sheetCard"); refreshAll();
   toast("Cartão excluído");
 });
+
+/* ----- pagamento de fatura ----- */
+let invoicePayTarget = null;
+
+function openInvoicePaySheet(){
+  const { list } = closedInvoicesDue();
+  const wrap = $("#invoicePayList");
+  wrap.innerHTML = "";
+  if(list.length === 0){
+    wrap.appendChild(emptyRow("Nenhuma fatura fechada pendente."));
+  } else {
+    list.forEach(item=>{
+      wrap.appendChild(el("div",{class:"list-row", onclick:()=> openInvoiceConfirm(item.card, item.mKey)},[
+        el("div",{class:"row-ic", style:`background:${item.card.color||"#262B38"}`},["💳"]),
+        el("div",{class:"row-body"},[
+          el("div",{class:"name"},[item.card.name]),
+          el("div",{class:"sub"},[`Fatura de ${monthLabel(item.mKey)}${item.paid>0?" · paga parcialmente":""}`])
+        ]),
+        el("div",{class:"row-val neg"},[maskMoney(item.remaining)])
+      ]));
+    });
+  }
+  openSheet("#sheetInvoicePay");
+}
+$("#invoiceBanner").addEventListener("click", openInvoicePaySheet);
+
+function openInvoiceConfirm(card, mKey){
+  invoicePayTarget = { card, mKey };
+  const total = cardInvoice(card, mKey);
+  const paid = invoicePaidAmount(card, mKey);
+  const remaining = total - paid;
+
+  const info = $("#invoiceConfirmInfo");
+  info.innerHTML = "";
+  info.appendChild(el("div",{class:"invoice-summary"},[
+    el("div",{class:"row"},[el("span",{},["Cartão"]), el("b",{},[card.name])]),
+    el("div",{class:"row"},[el("span",{},["Fatura"]), el("b",{},[monthLabel(mKey)])]),
+    el("div",{class:"row"},[el("span",{},["Total da fatura"]), el("b",{class:"num"},[maskMoney(total)])]),
+    paid>0 ? el("div",{class:"row"},[el("span",{},["Já pago"]), el("b",{class:"num", style:"color:var(--teal)"},[maskMoney(paid)])]) : null,
+    el("div",{class:"row"},[el("span",{},["Restante"]), el("b",{class:"num", style:"color:var(--coral)"},[maskMoney(remaining)])]),
+  ]));
+
+  $("#invoicePayAmount").value = remaining.toFixed(2).replace(".",",");
+  fillAccountSelect($("#invoicePayAccount"), false);
+  $("#invoicePayDate").value = isoDate(new Date());
+  closeSheet("#sheetInvoicePay");
+  openSheet("#sheetInvoiceConfirm");
+}
+
+$("#confirmInvoicePayBtn").addEventListener("click", ()=>{
+  if(!invoicePayTarget) return;
+  const amount = parseAmount($("#invoicePayAmount").value);
+  if(amount<=0){ toast("Informe um valor válido"); return; }
+  const accVal = $("#invoicePayAccount").value;
+  if(!accVal){ toast("Selecione uma conta"); return; }
+  const accountId = accVal.split(":")[1];
+  const date = $("#invoicePayDate").value || isoDate(new Date());
+  const { card, mKey } = invoicePayTarget;
+
+  state.transactions.push({
+    id: uid(), type:"invoice_payment", kind:"account",
+    accountId, amount, date,
+    description: `Pagamento fatura ${card.name}`,
+    categoryId: "cat_fatura",
+    invoicePayment: { cardId: card.id, mKey },
+    createdAt: Date.now()
+  });
+  persist();
+
+  const total = cardInvoice(card, mKey);
+  const paidNow = invoicePaidAmount(card, mKey);
+  closeSheet("#sheetInvoiceConfirm");
+  refreshAll();
+  toast(paidNow >= total - 0.004 ? "Fatura paga!" : "Pagamento parcial registrado");
+});
+
+function openInvoicePaymentView(tx){
+  const card = getCard(tx.invoicePayment ? tx.invoicePayment.cardId : null);
+  const account = getAccount(tx.accountId);
+  const msg = `Pagamento de fatura\n\nCartão: ${card?card.name:"—"}\nFatura: ${tx.invoicePayment?monthLabel(tx.invoicePayment.mKey):"—"}\nValor: ${fmtMoney(tx.amount)}\nConta: ${account?account.name:"—"}\nData: ${tx.date}\n\nDeseja excluir este pagamento?`;
+  if(confirm(msg)){
+    state.transactions = state.transactions.filter(t=>t.id!==tx.id);
+    persist(); refreshAll();
+    toast("Pagamento excluído");
+  }
+}
 
 /* ----- orçamento ----- */
 let budgetSelectedCategory = null;
