@@ -138,6 +138,51 @@ main{ padding: 14px 20px 28px; display:flex; flex-direction:column; gap:22px; }
 .flow-pill.income .v{ color: var(--green); }
 .flow-pill.expense .v{ color: var(--coral); }
 
+/* ---------- invoice banner (fatura fechada) ---------- */
+.invoice-banner{
+  display:flex; align-items:center; gap:13px;
+  background: linear-gradient(135deg, rgba(245,185,69,0.16), rgba(245,185,69,0.05));
+  border:1px solid rgba(245,185,69,0.35);
+  border-radius: var(--r-lg); padding:15px 16px; cursor:pointer;
+}
+.invoice-banner .ib-icon{
+  width:42px; height:42px; border-radius:13px; background: rgba(245,185,69,0.18);
+  display:grid; place-items:center; font-size:19px; flex-shrink:0;
+}
+.invoice-banner .ib-body{ flex:1; min-width:0; }
+.invoice-banner .ib-title{ font-size:13.5px; font-weight:700; color: var(--amber); }
+.invoice-banner .ib-sub{ font-size:11.5px; color:var(--text-dim); margin-top:2px; }
+.invoice-banner .ib-right{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.invoice-banner .ib-amount{ font-size:15px; font-weight:700; color: var(--amber); }
+.invoice-banner .ib-chev{ color: var(--text-faint); font-size:18px; }
+.invoice-banner:active{ filter:brightness(1.08); }
+
+/* card row with status stack */
+.row-val-stack{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; }
+.row-status{ font-size:10.5px; font-weight:700; }
+.row-status.ok{ color: var(--teal); }
+.row-status.pending{ color: var(--amber); }
+.amt-line{ font-size:14.5px; font-weight:700; }
+.amt-line.neg{ color: var(--coral); }
+.amt-line.pos{ color: var(--green); }
+
+/* invoice payment summary + alert inside card sheet */
+.invoice-summary{
+  background: var(--surface-2); border:1px solid var(--border); border-radius: var(--r-md);
+  padding:14px 16px; display:flex; flex-direction:column; gap:9px;
+}
+.invoice-summary .row{ display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim); }
+.invoice-summary .row b{ color:var(--text); font-weight:700; }
+
+.card-invoice-alert{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background: rgba(245,185,69,0.1); border:1px solid rgba(245,185,69,0.3);
+  border-radius: var(--r-md); padding:13px 15px;
+}
+.card-invoice-alert .cia-label{ font-size:11.5px; color: var(--amber); font-weight:700; }
+.card-invoice-alert .cia-amount{ font-size:15px; font-weight:700; margin-top:2px; }
+.card-invoice-alert .btn-secondary{ width:auto; padding:10px 16px; flex-shrink:0; }
+
 /* ---------- section header ---------- */
 .section-head{ display:flex; align-items:center; justify-content:space-between; }
 .section-head h2{ font-size:16px; font-weight:700; }
