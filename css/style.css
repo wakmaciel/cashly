@@ -187,6 +187,21 @@ main{ padding: 14px 20px 28px; display:flex; flex-direction:column; gap:22px; }
 .flow-pill.income .v{ color: var(--green); }
 .flow-pill.expense .v{ color: var(--coral); }
 
+.installment-badge{
+  display:inline-block; font-size:10px; font-weight:700; color: var(--violet);
+  background: rgba(124,108,255,0.14); border-radius:5px; padding:1px 5px; margin-left:3px; vertical-align:middle;
+}
+
+/* ---------- parcelamento e hint de fatura ---------- */
+.installment-row{ display:flex; gap:8px; align-items:center; }
+.invoice-month-hint{
+  display:flex; align-items:center; gap:8px;
+  font-size:12px; color:var(--teal); font-weight:700;
+  background: rgba(45,212,191,0.1); border:1px solid rgba(45,212,191,0.25);
+  border-radius: var(--r-sm); padding:9px 12px;
+}
+.invoice-month-hint::before{ content:"📅"; font-size:14px; }
+
 /* ---------- invoice banner (fatura fechada) ---------- */
 .invoice-banner{
   display:flex; align-items:center; gap:13px;
