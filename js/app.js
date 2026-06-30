@@ -128,11 +128,38 @@ function totalBalance(){
 }
 function cardInvoice(card, mKey){
   return state.transactions
-    .filter(tx => tx.cardId === card.id && tx.kind === "card" && txMonthKey(tx) === mKey)
+    .filter(tx => tx.cardId === card.id && tx.kind === "card" && txInvoiceMKey(tx) === mKey)
     .reduce((s,tx)=> s + tx.amount, 0);
 }
+
+/* Dado um cartão e uma data de compra, retorna o mKey (YYYY-MM) da fatura
+   que vai receber essa compra. Regra: se a data da compra é >= dia de fechamento,
+   vai para a fatura do mês seguinte. */
+function invoiceMKeyForDate(card, dateStr){
+  const d = new Date(dateStr + "T00:00:00");
+  const closingDay = card.closingDay || 31;
+  let y = d.getFullYear(), m = d.getMonth(); // m = 0-based
+  if(d.getDate() >= closingDay){
+    // passa para o próximo mês
+    m++;
+    if(m > 11){ m = 0; y++; }
+  }
+  return y + "-" + String(m + 1).padStart(2, "0");
+}
+
+/* Substitui txMonthKey para compras de cartão: usa o mês da fatura, não da data de compra */
+function txInvoiceMKey(tx){
+  if(tx.kind === "card" && tx.cardId){
+    const card = getCard(tx.cardId);
+    if(card) return invoiceMKeyForDate(card, tx.date);
+  }
+  return txMonthKey(tx);
+}
 function monthTx(mKey){
-  return state.transactions.filter(tx => txMonthKey(tx) === mKey && tx.type !== "transfer_out" && tx.type !== "transfer_in" && tx.type !== "invoice_payment");
+  return state.transactions.filter(tx => {
+    if(tx.type === "transfer_out" || tx.type === "transfer_in" || tx.type === "invoice_payment") return false;
+    return txInvoiceMKey(tx) === mKey;
+  });
 }
 function monthIncomeExpense(mKey){
   const txs = monthTx(mKey);
@@ -352,7 +379,7 @@ function renderTx(){
   const wrap = $("#txListWrap");
   wrap.innerHTML = "";
   const txs = state.transactions
-    .filter(t => txMonthKey(t) === mKey && t.type !== "transfer_in")
+    .filter(t => txInvoiceMKey(t) === mKey && t.type !== "transfer_in")
     .sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
 
   if(txs.length === 0){
@@ -378,7 +405,10 @@ function renderTx(){
         el("div",{class:"tx-ic", style:`background:${cat.color}33; color:${cat.color}`},[cat.icon]),
         el("div",{class:"tx-body"},[
           el("div",{class:"name"},[tx.description || cat.name]),
-          el("div",{class:"sub"},[`${cat.name}${place? " · "+place : ""}`])
+          el("div",{class:"sub"},[
+            `${cat.name}${place?" · "+place:""}`,
+            tx.installmentTotal ? el("span",{class:"installment-badge"},[` ${tx.installmentIndex}/${tx.installmentTotal}`]) : null
+          ].filter(Boolean))
         ]),
         el("div",{class:"tx-val"},[
           el("div",{class:`amt ${isPos?"pos":"neg"}`},[(isPos?"+ ":"- ") + maskMoney(tx.amount)]),
@@ -504,6 +534,11 @@ function setTxType(type){
     txSelectedCategory = state.categories.find(c=>c.type===type && !c.system) || null;
     updateCategoryBtn();
   }
+  // parcelamento/hint só aparecem depois que updateInvoiceHint avaliar
+  $("#txInstallmentField").classList.add("page-hidden");
+  $("#txInvoiceMonthField").classList.add("page-hidden");
+  resetInstallSeg();
+  setTimeout(updateInvoiceHint, 0); // após o DOM atualizar o select
 }
 $all("#txTypeSeg button").forEach(b=> b.addEventListener("click", ()=> setTxType(b.dataset.type)));
 
@@ -532,6 +567,124 @@ $("#txCategoryBtn").addEventListener("click", ()=>{
   openCategoryPicker(txCurrentType, (cat)=>{ txSelectedCategory = cat; updateCategoryBtn(); });
 });
 
+const DEFAULT_ACCOUNT_KEY = "cashly:defaultAccount";
+
+function getDefaultAccountValue(){
+  return localStorage.getItem(DEFAULT_ACCOUNT_KEY) || "";
+}
+function setDefaultAccountPref(val){
+  localStorage.setItem(DEFAULT_ACCOUNT_KEY, val);
+  updateDefaultAccountLabel();
+}
+function updateDefaultAccountLabel(){
+  const val = getDefaultAccountValue();
+  const label = $("#defaultAccountLabel");
+  if(!label) return;
+  if(!val){ label.textContent = "Nenhum"; return; }
+  const [kind, id] = val.split(":");
+  const item = kind==="card" ? getCard(id) : getAccount(id);
+  label.textContent = item ? item.name : "Nenhum";
+}
+function openDefaultAccountSheet(){
+  const wrap = $("#defaultAccountList");
+  wrap.innerHTML = "";
+  const current = getDefaultAccountValue();
+
+  // opção "nenhum"
+  const noneRow = el("div",{class:"cat-pick-row"+(current===""?" active":""), onclick:()=>{
+    setDefaultAccountPref(""); closeSheet("#sheetDefaultAccount"); toast("Conta padrão removida");
+  }},[
+    el("div",{class:"row-ic", style:"background:var(--surface-3)"},["–"]),
+    el("span",{},["Nenhum (não pré-selecionar)"])
+  ]);
+  wrap.appendChild(noneRow);
+
+  state.accounts.forEach(a=>{
+    const val = "acc:"+a.id;
+    wrap.appendChild(el("div",{class:"cat-pick-row"+(current===val?" active":""), onclick:()=>{
+      setDefaultAccountPref(val); closeSheet("#sheetDefaultAccount"); toast(`Padrão: ${a.name}`);
+    }},[
+      el("div",{class:"row-ic", style:`background:${a.color||"#7C6CFF"}`},[a.icon||"💰"]),
+      el("span",{},[a.name])
+    ]));
+  });
+  state.cards.forEach(c=>{
+    const val = "card:"+c.id;
+    wrap.appendChild(el("div",{class:"cat-pick-row"+(current===val?" active":""), onclick:()=>{
+      setDefaultAccountPref(val); closeSheet("#sheetDefaultAccount"); toast(`Padrão: ${c.name}`);
+    }},[
+      el("div",{class:"row-ic", style:`background:${c.color||"#7C6CFF"}`},["💳"]),
+      el("span",{},[c.name])
+    ]));
+  });
+  openSheet("#sheetDefaultAccount");
+}
+
+/* ----- parcelamento ----- */
+let txInstallCount = 1;
+$all("#txInstallSeg button").forEach(b=>{
+  b.addEventListener("click", ()=>{
+    $all("#txInstallSeg button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    const inst = b.dataset.inst;
+    if(inst === "n"){
+      txInstallCount = parseInt($("#txInstallCount").value)||2;
+      $("#txInstallCustomWrap").classList.remove("page-hidden");
+    } else {
+      txInstallCount = parseInt(inst)||1;
+      $("#txInstallCustomWrap").classList.add("page-hidden");
+    }
+    updateInstallPreview();
+  });
+});
+$("#txInstallCount").addEventListener("input", ()=>{
+  txInstallCount = Math.max(2, Math.min(48, parseInt($("#txInstallCount").value)||2));
+  updateInstallPreview();
+});
+function updateInstallPreview(){
+  const preview = $("#txInstallPreview");
+  const total = parseAmount($("#txAmount").value);
+  if(txInstallCount > 1 && total > 0){
+    const parcel = total / txInstallCount;
+    preview.style.display = "block";
+    preview.textContent = `${txInstallCount}× de ${fmtMoney(parcel)}`;
+  } else {
+    preview.style.display = "none";
+  }
+}
+$("#txAmount").addEventListener("input", updateInstallPreview);
+
+function resetInstallSeg(){
+  txInstallCount = 1;
+  $all("#txInstallSeg button").forEach((b,i)=> b.classList.toggle("active", i===0));
+  $("#txInstallCustomWrap").classList.add("page-hidden");
+  $("#txInstallPreview").style.display = "none";
+}
+
+function updateInvoiceHint(){
+  const accVal = $("#txAccount").value;
+  const hintField = $("#txInvoiceMonthField");
+  const hint = $("#txInvoiceMonthHint");
+  const installField = $("#txInstallmentField");
+
+  if(!accVal || !accVal.startsWith("card:") || txCurrentType !== "expense"){
+    hintField.classList.add("page-hidden");
+    installField.classList.add("page-hidden");
+    return;
+  }
+  const cardId = accVal.split(":")[1];
+  const card = getCard(cardId);
+  if(!card){ hintField.classList.add("page-hidden"); installField.classList.add("page-hidden"); return; }
+
+  const dateVal = $("#txDate").value || isoDate(new Date());
+  const mKey = invoiceMKeyForDate(card, dateVal);
+  hint.textContent = `Vai para a fatura de ${monthLabel(mKey)}`;
+  hintField.classList.remove("page-hidden");
+  installField.classList.remove("page-hidden");
+}
+$("#txAccount").addEventListener("change", updateInvoiceHint);
+$("#txDate").addEventListener("change", updateInvoiceHint);
+
 function openTxSheet(tx){
   editingTxId = tx ? tx.id : null;
   $("#txSheetTitle").textContent = tx ? "Editar transação" : "Nova transação";
@@ -541,14 +694,22 @@ function openTxSheet(tx){
   $("#txAmount").value = tx ? String(tx.amount).replace(".",",") : "";
   $("#txDesc").value = tx ? (tx.description||"") : "";
   $("#txDate").value = tx ? tx.date : isoDate(new Date());
+  resetInstallSeg();
   if(tx){
     txSelectedCategory = getCategory(tx.categoryId) || null;
     updateCategoryBtn();
     if(tx.kind==="card") $("#txAccount").value = "card:"+tx.cardId;
     else $("#txAccount").value = "acc:"+tx.accountId;
   } else {
-    if($("#txAccount").options.length) $("#txAccount").selectedIndex = 0;
+    // aplica conta padrão
+    const def = getDefaultAccountValue();
+    if(def && $("#txAccount").querySelector(`option[value="${def}"]`)){
+      $("#txAccount").value = def;
+    } else if($("#txAccount").options.length){
+      $("#txAccount").selectedIndex = 0;
+    }
   }
+  updateInvoiceHint();
   openSheet("#sheetTx");
 }
 function isoDate(d){ return d.toISOString().slice(0,10); }
@@ -576,20 +737,46 @@ $("#saveTxBtn").addEventListener("click", ()=>{
     if(!accVal){ toast("Selecione uma conta ou cartão"); return; }
     const [kindRaw, id] = accVal.split(":");
     const kind = kindRaw==="card" ? "card" : "account";
-    const payload = {
-      type: txCurrentType, kind,
-      accountId: kind==="account"?id:null,
-      cardId: kind==="card"?id:null,
-      amount, date, description: desc, categoryId: txSelectedCategory.id
-    };
-    if(editingTxId){
+    const isCard = kind === "card";
+    const n = (isCard && txInstallCount > 1) ? txInstallCount : 1;
+
+    if(editingTxId && n === 1){
+      // edição simples (parcelas não se editam, apenas excluem e relançam)
+      const payload = { type: txCurrentType, kind, accountId: kind==="account"?id:null, cardId: isCard?id:null, amount, date, description: desc, categoryId: txSelectedCategory.id };
       const idx = state.transactions.findIndex(t=>t.id===editingTxId);
       if(idx>-1) state.transactions[idx] = Object.assign(state.transactions[idx], payload);
       toast("Transação atualizada");
     } else {
-      payload.id = uid(); payload.createdAt = Date.now();
-      state.transactions.push(payload);
-      toast("Transação adicionada");
+      if(editingTxId) removeTxPair(editingTxId);
+      const parcelAmt = Math.round((amount / n) * 100) / 100;
+      const groupId = n > 1 ? uid() : null; // agrupa parcelas
+      let purchaseDate = new Date(date + "T00:00:00");
+
+      for(let i = 0; i < n; i++){
+        // data de cada parcela: avança i meses a partir da data da compra
+        const parcDate = new Date(purchaseDate);
+        parcDate.setMonth(parcDate.getMonth() + i);
+        // ajuste de fim de mês (ex: 31/jan + 1 mês → 28/fev)
+        const origDay = purchaseDate.getDate();
+        const maxDay = new Date(parcDate.getFullYear(), parcDate.getMonth()+1, 0).getDate();
+        parcDate.setDate(Math.min(origDay, maxDay));
+
+        const parcLabel = n > 1 ? ` (${i+1}/${n})` : "";
+        state.transactions.push({
+          id: uid(), createdAt: Date.now() + i,
+          type: txCurrentType, kind,
+          accountId: kind==="account"?id:null,
+          cardId: isCard?id:null,
+          amount: i === n-1 ? amount - parcelAmt*(n-1) : parcelAmt, // ajuste de centavos na última parcela
+          date: isoDate(parcDate),
+          description: (desc||txSelectedCategory.name) + parcLabel,
+          categoryId: txSelectedCategory.id,
+          installmentGroup: groupId,
+          installmentIndex: n > 1 ? i+1 : undefined,
+          installmentTotal: n > 1 ? n : undefined
+        });
+      }
+      toast(n > 1 ? `${n} parcelas lançadas` : "Transação adicionada");
     }
   }
   persist();
@@ -599,7 +786,9 @@ $("#saveTxBtn").addEventListener("click", ()=>{
 
 function removeTxPair(id){
   const tx = state.transactions.find(t=>t.id===id);
-  if(tx && tx.pairId) state.transactions = state.transactions.filter(t=>t.pairId!==tx.pairId);
+  if(!tx){ state.transactions = state.transactions.filter(t=>t.id!==id); return; }
+  if(tx.pairId) state.transactions = state.transactions.filter(t=>t.pairId!==tx.pairId);
+  else if(tx.installmentGroup) state.transactions = state.transactions.filter(t=>t.installmentGroup!==tx.installmentGroup);
   else state.transactions = state.transactions.filter(t=>t.id!==id);
 }
 $("#deleteTxBtn").addEventListener("click", ()=>{
@@ -644,7 +833,7 @@ function openAccountSheet(acc){
       state.accounts.push({ id: uid(), name, balance, icon: chosenIcon });
       toast("Conta criada");
     }
-    persist(); closeSheet("#sheetAccount"); refreshAll();
+    persist(); closeSheet("#sheetAccount"); refreshAll(); updateDefaultAccountLabel();
   };
   openSheet("#sheetAccount");
 }
@@ -881,6 +1070,7 @@ $all(".menu-row").forEach(row=>{
   row.addEventListener("click", ()=>{
     const action = row.dataset.action;
     if(action==="theme"){ openThemeSheet(); }
+    else if(action==="defaultAccount"){ openDefaultAccountSheet(); }
     else if(action==="accounts"){ showPage("home"); document.getElementById("accountsList").scrollIntoView({behavior:"smooth"}); }
     else if(action==="cards"){ showPage("home"); document.getElementById("cardsList").scrollIntoView({behavior:"smooth"}); }
     else if(action==="categories"){ renderCategoriesManageList(); openSheet("#sheetCategories"); }
@@ -989,6 +1179,7 @@ function init(){
   $("#txDate").value = isoDate(new Date());
   $("#toggleVisibility").textContent = hideValues ? "🙈" : "👁";
   applyTheme(getThemePref());
+  updateDefaultAccountLabel();
   refreshAll();
 
   if("serviceWorker" in navigator){
