@@ -65,6 +65,8 @@ let hideValues = localStorage.getItem(VISIBILITY_KEY) === "1";
 
 function persist(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(STORAGE_KEY + ":updatedAt", String(Date.now()));
+  document.dispatchEvent(new CustomEvent("cashly:changed"));
 }
 
 function fmtMoney(v){
@@ -1521,5 +1523,27 @@ function init(){
   }
 }
 init();
+
+/* ============== ponte para módulos externos (ex: backup no Google Drive) ==============
+   Exposição mínima e deliberada: o módulo de backup nunca acessa localStorage
+   diretamente por fora daqui, sempre passa por essas funções para garantir que
+   refreshAll() e os eventos internos fiquem consistentes. */
+window.CashlyCore = {
+  STORAGE_KEY,
+  getState: ()=> state,
+  getUpdatedAt: ()=> Number(localStorage.getItem(STORAGE_KEY + ":updatedAt")) || 0,
+  // substitui o estado inteiro (ex: dados vindos do backup) e re-renderiza
+  replaceState: (newState)=>{
+    if(!newState || !newState.accounts || !newState.transactions){
+      throw new Error("Formato de dados inválido para restauração");
+    }
+    if(!newState.fixedExpenses) newState.fixedExpenses = [];
+    if(!newState.budgets) newState.budgets = [];
+    state = newState;
+    persist();
+    refreshAll();
+  },
+  toast
+};
 
 })();

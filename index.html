@@ -161,6 +161,7 @@
       <div class="menu-row" data-action="cards"><div class="mi">💳</div><div class="mt">Cartões de crédito</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="categories"><div class="mi">🏷️</div><div class="mt">Categorias</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="fixedExpenses"><div class="mi">🔁</div><div class="mt">Despesas fixas</div><div class="chev">›</div></div>
+      <div class="menu-row" id="gdriveMenuRow"><div class="mi">☁️</div><div class="mt">Backup no Google Drive</div><div class="mt-value">Desconectado</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="export"><div class="mi">⬇️</div><div class="mt">Exportar backup (JSON)</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="import"><div class="mi">⬆️</div><div class="mt">Importar backup</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="reset"><div class="mi">🗑️</div><div class="mt" style="color:var(--coral)">Apagar todos os dados</div><div class="chev">›</div></div>
@@ -523,9 +524,30 @@
     </div>
   </div>
 
+  <!-- ============ SHEET: BACKUP NO GOOGLE DRIVE ============ -->
+  <div class="overlay" id="sheetGDrive">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3>Backup no Google Drive</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div class="gdrive-info-box">
+          <div class="gi-icon">☁️</div>
+          <p id="gdriveStatus" style="font-size:12.5px; color:var(--text-dim); margin:0; text-align:center;">Conecte sua conta Google para manter um backup automático na nuvem.</p>
+        </div>
+        <p style="font-size:11.5px; color:var(--text-dim); margin:0;">
+          O backup é salvo em uma área privada do seu Google Drive, visível apenas para o Cashly (o app não acessa nenhum outro arquivo da sua conta). A sincronização acontece automaticamente cerca de 1 vez por dia, e você também pode forçar manualmente a qualquer momento.
+        </p>
+        <button class="btn-primary" id="gdriveConnectBtn">Conectar ao Google Drive</button>
+        <button class="btn-secondary page-hidden" id="gdriveSyncNowBtn">Sincronizar agora</button>
+        <button class="btn-danger page-hidden" id="gdriveDisconnectBtn">Desconectar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 </div>
 
 <script src="js/app.js"></script>
+<script src="js/gdrive-backup.js"></script>
 </body>
 </html>

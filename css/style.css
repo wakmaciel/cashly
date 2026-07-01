@@ -238,6 +238,14 @@ main{ padding: 14px 20px 28px; display:flex; flex-direction:column; gap:22px; }
 }
 .checkbox-row input[type="checkbox"]{ width:18px; height:18px; flex-shrink:0; accent-color: var(--violet); }
 
+/* box de status do backup no Google Drive */
+.gdrive-info-box{
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  background: var(--surface-2); border:1px solid var(--border); border-radius: var(--r-md);
+  padding:20px 16px;
+}
+.gdrive-info-box .gi-icon{ font-size:28px; }
+
 /* card row with status stack */
 .row-val-stack{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; }
 .row-status{ font-size:10.5px; font-weight:700; }
