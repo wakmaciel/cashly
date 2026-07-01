@@ -43,6 +43,7 @@ function loadState(){
         data.categories.push({ id:"cat_fatura", name:"Pagamento de fatura", icon:"💳", color:"#7C6CFF", type:"expense", system:true });
       }
       if(!data.budgets) data.budgets = [];
+      if(!data.fixedExpenses) data.fixedExpenses = [];
       return data;
     }
   }catch(e){ console.warn("Falha ao carregar dados", e); }
@@ -53,7 +54,8 @@ function loadState(){
     cards: [],
     categories: DEFAULT_CATEGORIES.slice(),
     transactions: [],
-    budgets: []
+    budgets: [],
+    fixedExpenses: []
   };
 }
 
@@ -216,6 +218,99 @@ function closedInvoicesDue(){
   return { sum, list };
 }
 
+/* ============== despesas fixas (recorrentes) ==============
+   Um "fixedExpense" é um template: description, amount, categoryId,
+   kind ("card" ou "account"), cardId/accountId, dueDay (dia do mês),
+   startDate (primeira ocorrência) e active.
+
+   - kind "card": todo mês, ao abrir o app, lança automaticamente uma
+     transação de cartão naquele mês, marcada com fixedExpenseId
+     (assinaturas: Netflix, Spotify...) — repete sozinha, sem confirmação.
+   - kind "account": NÃO lança sozinho. Fica pendente até o usuário confirmar
+     o pagamento (o boleto muda de código todo mês, então precisa de ação
+     manual), aparecendo em um aviso na tela inicial quando a data de
+     vencimento do mês corrente chegou/passou e ainda não foi paga.
+============================================================= */
+
+function getFixedExpense(id){ return state.fixedExpenses.find(f=>f.id===id); }
+
+function addMonthsKeepDay(dateStr, months){
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+  const maxDay = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  d.setDate(Math.min(day, maxDay));
+  return isoDate(d);
+}
+
+/* Garante que toda despesa fixa de CARTÃO tenha uma transação lançada
+   para o mês corrente (e não lança duplicado). Roda no init/refresh. */
+function ensureFixedCardCharges(){
+  const today = isoDate(new Date());
+  const todayKey = monthKey(new Date());
+  let changed = false;
+
+  state.fixedExpenses.filter(f=>f.active!==false && f.kind==="card").forEach(f=>{
+    const card = getCard(f.cardId);
+    if(!card) return;
+
+    // já existe uma transação dessa despesa fixa cuja fatura é o mês atual (ou futuro)?
+    const existing = state.transactions.filter(t=>t.fixedExpenseId===f.id);
+    const hasCurrentOrFuture = existing.some(t=> txInvoiceMKey(t) >= todayKey);
+    if(hasCurrentOrFuture) return;
+
+    // calcula a próxima data de cobrança (mantém o dia, avança meses a partir da última lançada ou do início)
+    let nextDate = existing.length
+      ? existing.reduce((max,t)=> t.date > max ? t.date : max, existing[0].date)
+      : f.startDate;
+    if(existing.length) nextDate = addMonthsKeepDay(nextDate, 1);
+    if(!nextDate) nextDate = today;
+    if(nextDate > today) return; // ainda não chegou a data, nada a lançar agora
+
+    state.transactions.push({
+      id: uid(), createdAt: Date.now(),
+      type: "expense", kind: "card",
+      cardId: f.cardId, accountId: null,
+      amount: f.amount,
+      date: nextDate,
+      description: f.description,
+      categoryId: f.categoryId,
+      fixedExpenseId: f.id
+    });
+    changed = true;
+  });
+
+  if(changed) persist();
+}
+
+/* Retorna as despesas fixas de CONTA pendentes de pagamento no mês corrente:
+   já passou (ou é hoje) o dueDay e ainda não existe transação paga referente
+   a esse (fixedExpenseId, mês). */
+function pendingFixedAccountCharges(){
+  const now = new Date();
+  const todayKey = monthKey(now);
+  const todayDay = now.getDate();
+  const result = [];
+
+  state.fixedExpenses.filter(f=>f.active!==false && f.kind==="account").forEach(f=>{
+    const account = getAccount(f.accountId);
+    if(!account) return;
+    if(f.startDate && monthKey(new Date(f.startDate+"T00:00:00")) > todayKey) return; // ainda não iniciou
+
+    const dueDay = f.dueDay || 1;
+    const alreadyPaid = state.transactions.some(t=> t.fixedExpenseId===f.id && txMonthKey(t)===todayKey);
+    if(alreadyPaid) return;
+    if(todayDay < dueDay) return; // ainda não venceu este mês
+
+    const dueDate = todayKey + "-" + String(dueDay).padStart(2,"0");
+    result.push({ fixedExpense: f, account, dueDate, mKey: todayKey });
+  });
+
+  result.sort((a,b)=> a.dueDate.localeCompare(b.dueDate));
+  return result;
+}
+
 /* ============== rendering: header ============== */
 function renderMonthLabel(){
   $("#monthLabel").textContent = MONTHS[viewDate.getMonth()];
@@ -236,6 +331,7 @@ function renderRing(income, expense){
 }
 
 function renderHome(){
+  ensureFixedCardCharges();
   const mKey = monthKey(viewDate);
   const { income, expense } = monthIncomeExpense(mKey);
   $("#totalBalance").textContent = maskMoney(totalBalance());
@@ -243,6 +339,7 @@ function renderHome(){
   $("#monthExpense").textContent = maskMoney(expense);
   renderRing(income, expense);
   renderInvoiceBanner();
+  renderFixedPendingBanner();
 
   // accounts
   const accWrap = $("#accountsList");
@@ -303,6 +400,17 @@ function renderInvoiceBanner(){
   wrap.classList.remove("page-hidden");
   $("#invoiceBannerAmount").textContent = maskMoney(sum);
   $("#invoiceBannerSub").textContent = `${list.length} fatura${list.length>1?"s":""} fechada${list.length>1?"s":""} aguardando pagamento`;
+}
+
+function renderFixedPendingBanner(){
+  const wrap = $("#fixedPendingBanner");
+  if(!wrap) return;
+  const pending = pendingFixedAccountCharges();
+  if(pending.length === 0){ wrap.classList.add("page-hidden"); return; }
+  wrap.classList.remove("page-hidden");
+  const sum = pending.reduce((s,p)=> s + p.fixedExpense.amount, 0);
+  $("#fixedPendingBannerAmount").textContent = maskMoney(sum);
+  $("#fixedPendingBannerSub").textContent = `${pending.length} despesa${pending.length>1?"s":""} fixa${pending.length>1?"s":""} pendente${pending.length>1?"s":""} de pagamento`;
 }
 
 function emptyRow(msg){ return el("div",{class:"empty-row"},[msg]); }
@@ -635,6 +743,7 @@ $all("#txInstallSeg button").forEach(b=>{
       $("#txInstallCustomWrap").classList.add("page-hidden");
     }
     updateInstallPreview();
+    updateInvoiceHint();
   });
 });
 $("#txInstallCount").addEventListener("input", ()=>{
@@ -666,21 +775,29 @@ function updateInvoiceHint(){
   const hintField = $("#txInvoiceMonthField");
   const hint = $("#txInvoiceMonthHint");
   const installField = $("#txInstallmentField");
+  const fixedField = $("#txFixedField");
 
   if(!accVal || !accVal.startsWith("card:") || txCurrentType !== "expense"){
     hintField.classList.add("page-hidden");
     installField.classList.add("page-hidden");
+    if(fixedField) fixedField.classList.add("page-hidden");
     return;
   }
   const cardId = accVal.split(":")[1];
   const card = getCard(cardId);
-  if(!card){ hintField.classList.add("page-hidden"); installField.classList.add("page-hidden"); return; }
+  if(!card){ hintField.classList.add("page-hidden"); installField.classList.add("page-hidden"); if(fixedField) fixedField.classList.add("page-hidden"); return; }
 
   const dateVal = $("#txDate").value || isoDate(new Date());
   const mKey = invoiceMKeyForDate(card, dateVal);
   hint.textContent = `Vai para a fatura de ${monthLabel(mKey)}`;
   hintField.classList.remove("page-hidden");
   installField.classList.remove("page-hidden");
+  // despesa fixa só faz sentido para compra à vista (não parcelada) e transação nova
+  if(fixedField){
+    const showFixed = txInstallCount <= 1 && !editingTxId;
+    fixedField.classList.toggle("page-hidden", !showFixed);
+    if(!showFixed) $("#txIsFixed").checked = false;
+  }
 }
 $("#txAccount").addEventListener("change", updateInvoiceHint);
 $("#txDate").addEventListener("change", updateInvoiceHint);
@@ -695,6 +812,7 @@ function openTxSheet(tx){
   $("#txDesc").value = tx ? (tx.description||"") : "";
   $("#txDate").value = tx ? tx.date : isoDate(new Date());
   resetInstallSeg();
+  if($("#txIsFixed")) $("#txIsFixed").checked = false;
   if(tx){
     txSelectedCategory = getCategory(tx.categoryId) || null;
     updateCategoryBtn();
@@ -762,21 +880,34 @@ $("#saveTxBtn").addEventListener("click", ()=>{
         parcDate.setDate(Math.min(origDay, maxDay));
 
         const parcLabel = n > 1 ? ` (${i+1}/${n})` : "";
-        state.transactions.push({
+        const finalDesc = (desc||txSelectedCategory.name) + parcLabel;
+        const txObj = {
           id: uid(), createdAt: Date.now() + i,
           type: txCurrentType, kind,
           accountId: kind==="account"?id:null,
           cardId: isCard?id:null,
           amount: i === n-1 ? amount - parcelAmt*(n-1) : parcelAmt, // ajuste de centavos na última parcela
           date: isoDate(parcDate),
-          description: (desc||txSelectedCategory.name) + parcLabel,
+          description: finalDesc,
           categoryId: txSelectedCategory.id,
           installmentGroup: groupId,
           installmentIndex: n > 1 ? i+1 : undefined,
           installmentTotal: n > 1 ? n : undefined
-        });
+        };
+        state.transactions.push(txObj);
+
+        // marca como despesa fixa: cria o template para repetir automaticamente nos próximos meses
+        if(i === 0 && isCard && n === 1 && $("#txIsFixed") && $("#txIsFixed").checked){
+          const fixedId = uid();
+          state.fixedExpenses.push({
+            id: fixedId, kind:"card", cardId:id, accountId:null, dueDay:null,
+            description: desc||txSelectedCategory.name, amount, categoryId: txSelectedCategory.id,
+            startDate: date, active:true
+          });
+          txObj.fixedExpenseId = fixedId;
+        }
       }
-      toast(n > 1 ? `${n} parcelas lançadas` : "Transação adicionada");
+      toast(n > 1 ? `${n} parcelas lançadas` : ($("#txIsFixed") && $("#txIsFixed").checked ? "Despesa fixa criada — vai repetir todo mês" : "Transação adicionada"));
     }
   }
   persist();
@@ -925,6 +1056,7 @@ function openInvoicePaySheet(){
   openSheet("#sheetInvoicePay");
 }
 $("#invoiceBanner").addEventListener("click", openInvoicePaySheet);
+if($("#fixedPendingBanner")) $("#fixedPendingBanner").addEventListener("click", openFixedPendingSheet);
 
 function openInvoiceConfirm(card, mKey){
   invoicePayTarget = { card, mKey };
@@ -986,6 +1118,197 @@ function openInvoicePaymentView(tx){
     toast("Pagamento excluído");
   }
 }
+
+/* ----- pagamento de despesa fixa em conta (ex: boleto de internet) ----- */
+let fixedPayTarget = null;
+
+function openFixedPendingSheet(){
+  const pending = pendingFixedAccountCharges();
+  const wrap = $("#fixedPendingList");
+  wrap.innerHTML = "";
+  if(pending.length === 0){
+    wrap.appendChild(emptyRow("Nenhuma despesa fixa pendente."));
+  } else {
+    pending.forEach(item=>{
+      const cat = getCategory(item.fixedExpense.categoryId) || {icon:"🧾", color:"#6C7A93"};
+      wrap.appendChild(el("div",{class:"list-row", onclick:()=> openFixedPayConfirm(item)},[
+        el("div",{class:"row-ic", style:`background:${cat.color}`},[cat.icon]),
+        el("div",{class:"row-body"},[
+          el("div",{class:"name"},[item.fixedExpense.description]),
+          el("div",{class:"sub"},[`Vencimento dia ${item.fixedExpense.dueDay} · ${item.account.name}`])
+        ]),
+        el("div",{class:"row-val neg"},[maskMoney(item.fixedExpense.amount)])
+      ]));
+    });
+  }
+  openSheet("#sheetFixedPending");
+}
+
+function openFixedPayConfirm(item){
+  fixedPayTarget = item;
+  const info = $("#fixedPayConfirmInfo");
+  info.innerHTML = "";
+  info.appendChild(el("div",{class:"invoice-summary"},[
+    el("div",{class:"row"},[el("span",{},["Despesa"]), el("b",{},[item.fixedExpense.description])]),
+    el("div",{class:"row"},[el("span",{},["Vencimento"]), el("b",{},[formatDateLabel(item.dueDate)])]),
+    el("div",{class:"row"},[el("span",{},["Valor"]), el("b",{class:"num"},[maskMoney(item.fixedExpense.amount)])]),
+  ]));
+  $("#fixedPayAmount").value = String(item.fixedExpense.amount).replace(".",",");
+  fillAccountSelect($("#fixedPayAccount"), false);
+  $("#fixedPayAccount").value = "acc:"+item.account.id;
+  $("#fixedPayDate").value = isoDate(new Date());
+  closeSheet("#sheetFixedPending");
+  openSheet("#sheetFixedPayConfirm");
+}
+
+$("#confirmFixedPayBtn").addEventListener("click", ()=>{
+  if(!fixedPayTarget) return;
+  const amount = parseAmount($("#fixedPayAmount").value);
+  if(amount<=0){ toast("Informe um valor válido"); return; }
+  const accVal = $("#fixedPayAccount").value;
+  if(!accVal){ toast("Selecione uma conta"); return; }
+  const accountId = accVal.split(":")[1];
+  const date = $("#fixedPayDate").value || isoDate(new Date());
+  const { fixedExpense } = fixedPayTarget;
+
+  state.transactions.push({
+    id: uid(), createdAt: Date.now(),
+    type: "expense", kind: "account",
+    accountId, amount, date,
+    description: fixedExpense.description,
+    categoryId: fixedExpense.categoryId,
+    fixedExpenseId: fixedExpense.id
+  });
+  persist();
+  closeSheet("#sheetFixedPayConfirm");
+  refreshAll();
+  toast("Pagamento registrado");
+});
+
+/* ----- gerenciar despesas fixas (criar / editar / listar) ----- */
+let editingFixedExpenseId = null;
+let fixedSelectedCategory = null;
+
+function renderFixedExpensesManageList(){
+  const wrap = $("#fixedExpensesManageList");
+  if(!wrap) return;
+  wrap.innerHTML = "";
+  if(state.fixedExpenses.length === 0){
+    wrap.appendChild(emptyRow("Nenhuma despesa fixa cadastrada."));
+    return;
+  }
+  state.fixedExpenses.forEach(f=>{
+    const cat = getCategory(f.categoryId) || {icon:"🧾", color:"#6C7A93", name:"Categoria"};
+    const place = f.kind==="card" ? (getCard(f.cardId)||{}).name : (getAccount(f.accountId)||{}).name;
+    const subLabel = f.kind==="card" ? `Cartão · ${place||"—"} · repete todo mês` : `Conta · ${place||"—"} · vence dia ${f.dueDay}`;
+    wrap.appendChild(el("div",{class:"list-row", onclick:()=> openFixedExpenseEdit(f)},[
+      el("div",{class:"row-ic", style:`background:${cat.color}`},[cat.icon]),
+      el("div",{class:"row-body"},[
+        el("div",{class:"name"},[f.description]),
+        el("div",{class:"sub"},[subLabel])
+      ]),
+      el("div",{class:"row-val neg"},[maskMoney(f.amount)])
+    ]));
+  });
+}
+
+function openFixedExpenseEdit(f){
+  editingFixedExpenseId = f ? f.id : null;
+  $("#fixedExpTitle").textContent = f ? "Editar despesa fixa" : "Nova despesa fixa";
+  $("#deleteFixedExpenseBtn").classList.toggle("page-hidden", !f);
+
+  let chosenKind = f ? f.kind : "card";
+  const setKindUI = (kind)=>{
+    chosenKind = kind;
+    $all("#fixedExpKindSeg button").forEach(b=> b.classList.toggle("active", b.dataset.kind===kind));
+    $("#fixedExpAccountField").classList.toggle("page-hidden", kind!=="account");
+    $("#fixedExpCardField").classList.toggle("page-hidden", kind!=="card");
+    $("#fixedExpDueDayField").classList.toggle("page-hidden", kind!=="account");
+    $("#fixedExpKindHint").textContent = kind==="card"
+      ? "Lançada automaticamente todo mês na fatura do cartão (ex: assinaturas)."
+      : "Fica pendente até você confirmar o pagamento todo mês (ex: internet, com boleto que muda todo mês).";
+  };
+  $all("#fixedExpKindSeg button").forEach(b=>{
+    b.onclick = ()=> setKindUI(b.dataset.kind);
+  });
+  setKindUI(chosenKind);
+
+  $("#fixedExpDesc").value = f ? f.description : "";
+  $("#fixedExpAmount").value = f ? String(f.amount).replace(".",",") : "";
+  $("#fixedExpDueDay").value = f ? (f.dueDay||"") : "";
+  $("#fixedExpStartDate").value = f ? (f.startDate||isoDate(new Date())) : isoDate(new Date());
+
+  const accSel = $("#fixedExpAccount");
+  accSel.innerHTML = "";
+  state.accounts.forEach(a=> accSel.appendChild(el("option",{value:a.id},[a.name])));
+  if(f && f.kind==="account") accSel.value = f.accountId;
+
+  const cardSel = $("#fixedExpCard");
+  cardSel.innerHTML = "";
+  state.cards.forEach(c=> cardSel.appendChild(el("option",{value:c.id},[c.name])));
+  if(f && f.kind==="card") cardSel.value = f.cardId;
+
+  fixedSelectedCategory = f ? getCategory(f.categoryId) : null;
+  const updateCatBtn = ()=>{
+    $("#fixedExpCategoryIcon").textContent = fixedSelectedCategory ? fixedSelectedCategory.icon : "🏷️";
+    $("#fixedExpCategoryName").textContent = fixedSelectedCategory ? fixedSelectedCategory.name : "Selecionar categoria";
+  };
+  updateCatBtn();
+  $("#fixedExpCategoryBtn").onclick = ()=>{
+    openCategoryPicker("expense", (cat)=>{ fixedSelectedCategory = cat; updateCatBtn(); });
+  };
+
+  $("#saveFixedExpenseBtn").onclick = ()=>{
+    const description = $("#fixedExpDesc").value.trim();
+    if(!description){ toast("Informe uma descrição"); return; }
+    const amount = parseAmount($("#fixedExpAmount").value);
+    if(amount<=0){ toast("Informe um valor válido"); return; }
+    if(!fixedSelectedCategory){ toast("Selecione uma categoria"); return; }
+    const startDate = $("#fixedExpStartDate").value || isoDate(new Date());
+
+    if(chosenKind === "card"){
+      const cardId = $("#fixedExpCard").value;
+      if(!cardId){ toast("Selecione um cartão"); return; }
+      const payload = { kind:"card", cardId, accountId:null, dueDay:null, description, amount, categoryId: fixedSelectedCategory.id, startDate, active:true };
+      if(editingFixedExpenseId){
+        Object.assign(getFixedExpense(editingFixedExpenseId), payload);
+        toast("Despesa fixa atualizada");
+      } else {
+        state.fixedExpenses.push(Object.assign({ id: uid() }, payload));
+        toast("Despesa fixa criada");
+      }
+    } else {
+      const accountId = $("#fixedExpAccount").value;
+      if(!accountId){ toast("Selecione uma conta"); return; }
+      const dueDay = Math.max(1, Math.min(31, parseInt($("#fixedExpDueDay").value)||1));
+      const payload = { kind:"account", accountId, cardId:null, dueDay, description, amount, categoryId: fixedSelectedCategory.id, startDate, active:true };
+      if(editingFixedExpenseId){
+        Object.assign(getFixedExpense(editingFixedExpenseId), payload);
+        toast("Despesa fixa atualizada");
+      } else {
+        state.fixedExpenses.push(Object.assign({ id: uid() }, payload));
+        toast("Despesa fixa criada");
+      }
+    }
+    persist();
+    closeSheet("#sheetFixedExpenseEdit");
+    renderFixedExpensesManageList();
+    refreshAll();
+  };
+
+  openSheet("#sheetFixedExpenseEdit");
+}
+if($("#newFixedExpenseBtn")) $("#newFixedExpenseBtn").addEventListener("click", ()=> openFixedExpenseEdit(null));
+if($("#deleteFixedExpenseBtn")) $("#deleteFixedExpenseBtn").addEventListener("click", ()=>{
+  if(!editingFixedExpenseId) return;
+  if(!confirm("Excluir esta despesa fixa? As transações já lançadas não serão removidas.")) return;
+  state.fixedExpenses = state.fixedExpenses.filter(f=>f.id!==editingFixedExpenseId);
+  persist();
+  closeSheet("#sheetFixedExpenseEdit");
+  renderFixedExpensesManageList();
+  refreshAll();
+  toast("Despesa fixa excluída");
+});
 
 /* ----- orçamento ----- */
 let budgetSelectedCategory = null;
@@ -1074,6 +1397,7 @@ $all(".menu-row").forEach(row=>{
     else if(action==="accounts"){ showPage("home"); document.getElementById("accountsList").scrollIntoView({behavior:"smooth"}); }
     else if(action==="cards"){ showPage("home"); document.getElementById("cardsList").scrollIntoView({behavior:"smooth"}); }
     else if(action==="categories"){ renderCategoriesManageList(); openSheet("#sheetCategories"); }
+    else if(action==="fixedExpenses"){ renderFixedExpensesManageList(); openSheet("#sheetFixedExpenses"); }
     else if(action==="export") exportData();
     else if(action==="import") importData();
     else if(action==="reset") resetData();
@@ -1180,6 +1504,7 @@ function init(){
   $("#toggleVisibility").textContent = hideValues ? "🙈" : "👁";
   applyTheme(getThemePref());
   updateDefaultAccountLabel();
+  ensureFixedCardCharges();
   refreshAll();
 
   if("serviceWorker" in navigator){

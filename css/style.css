@@ -221,6 +221,23 @@ main{ padding: 14px 20px 28px; display:flex; flex-direction:column; gap:22px; }
 .invoice-banner .ib-chev{ color: var(--text-faint); font-size:18px; }
 .invoice-banner:active{ filter:brightness(1.08); }
 
+/* variante teal para banner de despesas fixas pendentes (contas) */
+.invoice-banner.fixed-banner{
+  background: linear-gradient(135deg, rgba(45,212,191,0.16), rgba(45,212,191,0.05));
+  border:1px solid rgba(45,212,191,0.35);
+}
+.invoice-banner.fixed-banner .ib-icon{ background: rgba(45,212,191,0.18); }
+.invoice-banner.fixed-banner .ib-title,
+.invoice-banner.fixed-banner .ib-amount{ color: var(--teal); }
+
+/* checkbox de opção simples (ex: despesa fixa) */
+.checkbox-row{
+  display:flex; align-items:center; gap:10px; cursor:pointer;
+  background: var(--surface-2); border:1px solid var(--border); border-radius: var(--r-sm);
+  padding:12px 14px; font-size:13px; color:var(--text);
+}
+.checkbox-row input[type="checkbox"]{ width:18px; height:18px; flex-shrink:0; accent-color: var(--violet); }
+
 /* card row with status stack */
 .row-val-stack{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; }
 .row-status{ font-size:10.5px; font-weight:700; }

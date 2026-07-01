@@ -77,6 +77,18 @@
       </div>
     </section>
 
+    <section class="invoice-banner fixed-banner page-hidden" id="fixedPendingBanner">
+      <div class="ib-icon">🔁</div>
+      <div class="ib-body">
+        <div class="ib-title">Despesa fixa pendente</div>
+        <div class="ib-sub" id="fixedPendingBannerSub">0 despesas fixas pendentes de pagamento</div>
+      </div>
+      <div class="ib-right">
+        <div class="ib-amount num" id="fixedPendingBannerAmount">R$ 0,00</div>
+        <div class="ib-chev">›</div>
+      </div>
+    </section>
+
     <section>
       <div class="section-head">
         <h2>Contas</h2>
@@ -148,6 +160,7 @@
       <div class="menu-row" data-action="accounts"><div class="mi">🏦</div><div class="mt">Contas</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="cards"><div class="mi">💳</div><div class="mt">Cartões de crédito</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="categories"><div class="mi">🏷️</div><div class="mt">Categorias</div><div class="chev">›</div></div>
+      <div class="menu-row" data-action="fixedExpenses"><div class="mi">🔁</div><div class="mt">Despesas fixas</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="export"><div class="mi">⬇️</div><div class="mt">Exportar backup (JSON)</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="import"><div class="mi">⬆️</div><div class="mt">Importar backup</div><div class="chev">›</div></div>
       <div class="menu-row" data-action="reset"><div class="mi">🗑️</div><div class="mt" style="color:var(--coral)">Apagar todos os dados</div><div class="chev">›</div></div>
@@ -234,6 +247,14 @@
             <span style="color:var(--text-dim); font-size:13px;">parcelas</span>
           </div>
           <div id="txInstallPreview" style="font-size:12px; color:var(--text-dim); margin-top:6px; padding:8px 10px; background:var(--surface-2); border-radius:var(--r-sm); display:none;"></div>
+        </div>
+
+        <!-- despesa fixa (assinatura): repete automaticamente todo mês no cartão -->
+        <div class="field page-hidden" id="txFixedField">
+          <label class="checkbox-row">
+            <input type="checkbox" id="txIsFixed">
+            <span>É uma despesa fixa (assinatura) — repetir todo mês automaticamente</span>
+          </label>
         </div>
 
         <!-- aviso do mês da fatura -->
@@ -409,6 +430,95 @@
             <div class="tp-check">✓</div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: DESPESAS FIXAS PENDENTES (contas) ============ -->
+  <div class="overlay" id="sheetFixedPending">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3>Despesas fixas pendentes</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div id="fixedPendingList" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: CONFIRMAR PAGAMENTO DE DESPESA FIXA ============ -->
+  <div class="overlay" id="sheetFixedPayConfirm">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3>Pagar despesa fixa</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div id="fixedPayConfirmInfo"></div>
+        <div class="field"><label>Valor a pagar</label>
+          <div class="amount-input"><span>R$</span><input type="text" inputmode="decimal" id="fixedPayAmount" placeholder="0,00"></div>
+        </div>
+        <div class="field"><label>Pagar com a conta</label><select id="fixedPayAccount"></select></div>
+        <div class="field"><label>Data do pagamento</label><input type="date" id="fixedPayDate"></div>
+        <button class="btn-primary" id="confirmFixedPayBtn">Confirmar pagamento</button>
+        <p style="font-size:11.5px; color:var(--text-dim); text-align:center; margin:0;">O valor pode ser ajustado caso o boleto deste mês seja diferente do valor padrão.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: GERENCIAR DESPESAS FIXAS (lista) ============ -->
+  <div class="overlay" id="sheetFixedExpenses">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3>Despesas fixas</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div id="fixedExpensesManageList" style="display:flex; flex-direction:column; gap:10px;"></div>
+        <button class="btn-secondary" id="newFixedExpenseBtn">+ Nova despesa fixa</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHEET: NOVA/EDITAR DESPESA FIXA ============ -->
+  <div class="overlay" id="sheetFixedExpenseEdit">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h3 id="fixedExpTitle">Nova despesa fixa</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="sheet-body">
+        <div class="seg" id="fixedExpKindSeg">
+          <button class="active" data-kind="card">Cartão de crédito</button>
+          <button data-kind="account">Conta (boleto)</button>
+        </div>
+        <p style="font-size:11.5px; color:var(--text-dim); margin:0;" id="fixedExpKindHint">Lançada automaticamente todo mês na fatura do cartão (ex: assinaturas).</p>
+
+        <div class="field"><label>Descrição</label><input type="text" id="fixedExpDesc" placeholder="Ex: Netflix, Internet, Academia..."></div>
+
+        <div class="field">
+          <label>Categoria</label>
+          <button id="fixedExpCategoryBtn" style="display:flex; align-items:center; gap:10px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-sm); padding:12px 14px; color:var(--text); cursor:pointer; font-size:14.5px;">
+            <span id="fixedExpCategoryIcon">🏷️</span><span id="fixedExpCategoryName">Selecionar categoria</span>
+          </button>
+        </div>
+
+        <div class="field"><label>Valor</label>
+          <div class="amount-input"><span>R$</span><input type="text" inputmode="decimal" id="fixedExpAmount" placeholder="0,00"></div>
+        </div>
+
+        <div class="field" id="fixedExpCardField">
+          <label>Cartão</label>
+          <select id="fixedExpCard"></select>
+        </div>
+
+        <div class="field page-hidden" id="fixedExpAccountField">
+          <label>Conta</label>
+          <select id="fixedExpAccount"></select>
+        </div>
+
+        <div class="field page-hidden" id="fixedExpDueDayField">
+          <label>Dia de vencimento</label>
+          <input type="number" min="1" max="31" id="fixedExpDueDay" placeholder="Ex: 10">
+        </div>
+
+        <div class="field"><label>Primeira cobrança a partir de</label><input type="date" id="fixedExpStartDate"></div>
+
+        <button class="btn-primary" id="saveFixedExpenseBtn">Salvar despesa fixa</button>
+        <button class="btn-danger page-hidden" id="deleteFixedExpenseBtn">Excluir despesa fixa</button>
       </div>
     </div>
   </div>
