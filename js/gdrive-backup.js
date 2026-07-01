@@ -230,8 +230,27 @@ async function connect(){
     await syncNow({ silent: true });
   }catch(err){
     console.error("Erro ao conectar ao Google Drive:", err);
-    if(window.CashlyCore) window.CashlyCore.toast("Não foi possível conectar ao Google Drive");
+    const reason = describeConnectError(err);
+    if(window.CashlyCore) window.CashlyCore.toast("Google Drive: " + reason);
+    updateStatusUI("Falha ao conectar — " + reason);
   }
+}
+
+function describeConnectError(err){
+  const msg = (err && (err.message || err.type || err.error || String(err))) || "erro desconhecido";
+  if(msg.includes("popup_closed") || msg.includes("popup_failed_to_open")){
+    return "a janela de login foi bloqueada ou fechada. Permita pop-ups para este site e tente de novo.";
+  }
+  if(msg.includes("access_denied")){
+    return "acesso negado. Se o app ainda está em modo de teste no Google Cloud, sua conta precisa estar na lista de 'Test users'.";
+  }
+  if(msg.includes("idpiframe_initialization_failed") || msg.includes("origin")){
+    return "a origem deste site não está autorizada no Google Cloud Console (verifique 'Authorized JavaScript origins').";
+  }
+  if(msg.includes("invalid_client")){
+    return "Client ID inválido ou não corresponde a este domínio.";
+  }
+  return msg;
 }
 
 function disconnect(){
