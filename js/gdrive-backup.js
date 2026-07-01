@@ -20,7 +20,7 @@
    Client ID de outro app: crie um novo, mesmo que no mesmo projeto GCP. */
 const CLIENT_ID = "863627508865-12fdmalirlh909s3j63orvhms3u55297.apps.googleusercontent.com";
 
-const SCOPES = "https://www.googleapis.com/auth/drive.file";
+const SCOPES = "https://www.googleapis.com/auth/drive.appdata";
 const BACKUP_FILENAME = "cashly-backup.json";
 const TOKEN_STORAGE_KEY = "cashly:gdrive:token";
 const LAST_SYNC_KEY = "cashly:gdrive:lastSync";
@@ -71,13 +71,15 @@ async function ensureGoogleScripts(){
 function saveToken(token, expiresInSec){
   accessToken = token;
   accessTokenExpiresAt = Date.now() + (expiresInSec*1000) - 60000; // margem de 1min
-  sessionStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ token, expiresAt: accessTokenExpiresAt }));
+  sessionStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ token, expiresAt: accessTokenExpiresAt, scope: SCOPES }));
 }
 function loadCachedToken(){
   try{
     const raw = sessionStorage.getItem(TOKEN_STORAGE_KEY);
     if(!raw) return null;
-    const { token, expiresAt } = JSON.parse(raw);
+    const { token, expiresAt, scope } = JSON.parse(raw);
+    // se o escopo mudou desde a última vez (ex: ajuste de configuração), descarta o token antigo
+    if(scope !== SCOPES) return null;
     if(Date.now() >= expiresAt) return null;
     accessToken = token;
     accessTokenExpiresAt = expiresAt;
@@ -126,13 +128,23 @@ function driveHeaders(){
   return { "Authorization": "Bearer " + accessToken };
 }
 
+async function driveErrorMessage(res){
+  try{
+    const data = await res.json();
+    const msg = data && data.error && (data.error.message || data.error.status);
+    return msg ? `${res.status} — ${msg}` : String(res.status);
+  }catch(e){
+    return String(res.status);
+  }
+}
+
 async function findBackupFile(){
   if(backupFileId) return backupFileId;
   const url = "https://www.googleapis.com/drive/v3/files"
     + "?spaces=appDataFolder&q=" + encodeURIComponent(`name='${BACKUP_FILENAME}'`)
     + "&fields=files(id,name,modifiedTime)";
   const res = await fetch(url, { headers: driveHeaders() });
-  if(!res.ok) throw new Error("Falha ao consultar arquivos no Drive (" + res.status + ")");
+  if(!res.ok) throw new Error("Falha ao consultar arquivos no Drive (" + await driveErrorMessage(res) + ")");
   const data = await res.json();
   if(data.files && data.files.length){
     backupFileId = data.files[0].id;
@@ -147,7 +159,7 @@ async function downloadBackup(){
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
     headers: driveHeaders()
   });
-  if(!res.ok) throw new Error("Falha ao baixar backup (" + res.status + ")");
+  if(!res.ok) throw new Error("Falha ao baixar backup (" + await driveErrorMessage(res) + ")");
   return res.json();
 }
 
@@ -176,7 +188,7 @@ async function uploadBackup(payload){
     headers: Object.assign(driveHeaders(), { "Content-Type": `multipart/related; boundary=${boundary}` }),
     body
   });
-  if(!res.ok) throw new Error("Falha ao enviar backup (" + res.status + ")");
+  if(!res.ok) throw new Error("Falha ao enviar backup (" + await driveErrorMessage(res) + ")");
   const data = await res.json();
   backupFileId = data.id;
   return data;
@@ -214,8 +226,9 @@ async function syncNow(opts){
     updateStatusUI();
   }catch(err){
     console.error("Erro na sincronização com o Google Drive:", err);
-    updateStatusUI("Erro ao sincronizar — tente novamente");
-    if(window.CashlyCore) window.CashlyCore.toast("Falha ao sincronizar com o Google Drive");
+    const detail = (err && err.message) || "erro desconhecido";
+    updateStatusUI("Erro ao sincronizar: " + detail);
+    if(window.CashlyCore) window.CashlyCore.toast("Falha ao sincronizar: " + detail);
     throw err;
   }finally{
     syncing = false;
